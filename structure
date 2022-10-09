@@ -1,0 +1,56 @@
+
+
+
+
+
+g-zipped file to Canvas
+	No .o, executables, revision control or editor files
+
+
+
+ALL IN VIKALLOC.C:
+	vikalloc()
+	vikfree()
+	vikcalloc()
+	vikrealloc()
+	vikstrdup()
+
+
+NO MALLOC!!!
+	Only sbrk and brk
+
+
+DLL to manage memory
+
+
+main() in a different file
+
+
+sbrk() - requests more memory
+	call with min_sbrk_size bytes
+		defined in vikalloc.c
+
+	Use smallest multiple of min_sbrk_size that will hold the bytes called by user
+	+ any overhead to mng heap
+
+vikalloc 
+	- has one brk and 1 srbk
+
+
+Makefile to build the project!
+
+
+Check output of code from vikalloc_dump2()
+
+
+
+
+
+
+
+
+
+
+
+
+
