@@ -1,6 +1,9 @@
 // R. Jesse Chaney
 // rchaney@pdx.edu
 
+//  Dylan Herrigstad
+//  dyl29@pdx.edu
+
 #include "vikalloc.h"
 
 #define BLOCK_SIZE (sizeof(mem_block_t))
@@ -91,23 +94,6 @@ vikalloc_set_log(FILE *stream)
     vikalloc_log_stream = stream;
 }
 
-/*
- *              NOTES:
- *      First alloc, then split
- *      First free, then coalese
- *
- *      How to free header when coalesce?
- *
- *      Reset - Use brk
- *
- *      fprint(vikalloc_log_stream, (long), (low_water_mark);
- *  
- *
- *      Remove -Werror in Make?
- *
- *      NEW -- MONDAY AT 11:59pm!!
-*/
-
 
 void *
 vikalloc(size_t size)
@@ -121,75 +107,125 @@ vikalloc(size_t size)
     }
 
     //If nothing/trash is passed via parameter      
-    if((size == 0) || (!size)) //unsigned int is always false
+    if(size == 0 || !size) //unsigned int is always false
     {
         return NULL; // Some professors would skewer me for using two returns in a function block
                      // But I didn't see any specifications (or condemnation) in the lab1 details!
     }
     //If empty
-    if(block_list_head == NULL)
+    if(block_list_head == NULL)     //low_water_mark == NULL)
     {
         //determine minimum increment/multiple of min_sbrk_size
         int i = 1;
-        while (i * min_sbrk_size <= (size + BLOCK_SIZE))
+        //mem_block_t = a;
+        while ((i * min_sbrk_size) <= (size + BLOCK_SIZE))
         {
             i++;
         } 
         //Allocate size + header w/ sbrk
         curr = sbrk(i * min_sbrk_size);     // !!!!!SBRK CALL #1!!!!!!
         //  set size
-        curr->size = (size);
+        curr->size = size;
         //  set capacity
-        curr->capacity = ((i * min_sbrk_size) - BLOCK_SIZE);
+        curr->capacity = ((i * min_sbrk_size) - (BLOCK_SIZE));
         // updating ptr's
         curr->next = NULL;
         curr->prev = NULL;
-        block_list_head = curr;
-        low_water_mark = block_list_head;
-        high_water_mark = low_water_mark + (i * min_sbrk_size); // !!!POTENTIAL REWORK!!!
-                                                                //     int->string->hex? 0X400=1024
-                                                                //     ptr artithmetic
+        block_list_head = curr; // BASED ON INSTRUCTION AND MEM_BLOCK_T, I THINK THIS IS INTENDED AS A POINTER TO THE FIRST MEMORY BLOCK.
+        //block_list_tail = curr; // First and only node
+        low_water_mark = block_list_head; // Setting the new LWM
+        high_water_mark = (low_water_mark + (i * min_sbrk_size)); //Setting the HWM        
+        brk(high_water_mark);               // !!!!!BRK CALL #1!!!!!!!   Setting upper bounds of the bloc
+        //block_list_head = curr;       
+        //low_water_mark = block_list_head;
+        //high_water_mark = low_water_mark + (i * min_sbrk_size); // !!!POTENTIAL REWORK!!!
+        //     ptr artithmetic/ +/comp or - only
         // set upper bound w/ brk using i?
     }
+
     //else if NOT empty
     else if(block_list_head != NULL)
     {
         // First fit
+        //      Sentinel + reassign ptr
         int sentinel = 0;
-        curr = block_list_head;
+        curr = block_list_head; //low_water_mark;
+        // Look for free block and split
+        while(curr != NULL && sentinel == 0)
+        {
+            // FIRST TO CHECK IF IT'S FREE
+            // THEN CHECK IF IT FITS
+            if(IS_FREE(curr) && (curr->capacity >= size))
+            {
+                curr->size = size;  //Update size
+                                    //Removes free status
+                }
+                sentinel = 1; // Break while loop
+            
+            }
+            // IT'S NOT FREE
+            // BUT IT FITS
+            else if((curr->capacity - curr->size) >= (size + BLOCK_SIZE))
+            {
+                prev = curr;
+                curr = BLOCK_DATA(prev) + prev->size;
+                curr->size = size;
+                curr->capacity = prev->capacity - prev->size - BLOCK_SIZE; // BLOCK SIZE NOT OF PREV, BUT OF CURR
+                prev->capacity = prev->size;
+                curr->next = prev->next;
+                curr->prev = prev;
+                prev->next = curr;
+                    
+                if(curr->next) //NULL test & reassignment
+                {
+                    curr->next->prev = curr;
+                } 
 
+                sentinel = 1; // Break while loop
+            }
+            else
+            {
+                curr = curr->next; // Increment until success or sentinel break
+            }
+        }
+        // End of the line, we need new memory 
+        if(sentinel == 0)
+        {
+            int index = 1;
 
-        //  increment through the DLL
-        //      if found AND fits
-        //          split
-        //      else
-        //          not enough room?
-        //
-    
+            // Determine size
+            while((index * min_sbrk_size) <= (size + BLOCK_SIZE))
+            {
+                index++;
+            }
+            prev = block_list_head; // Set to front
+
+            // Cycle to end
+            while(prev->next != NULL)
+            {
+                prev = prev->next;
+            }
+            
+            // Allocate memory
+            curr = sbrk(min_sbrk_size * index);     // SBRK CALL #2 - ONLY FOR MORE MEMORY!
+            
+            // Error checking
+            if(errno == ENOMEM)
+            {
+                //errno = ENOMEM;
+                return NULL;
+            }
+            // Update cap
+            curr->size = size;
+            curr->capacity = ((index * min_sbrk_size) - (BLOCK_SIZE));
+            curr->prev = prev;
+            prev->next = curr;
+            curr->next = NULL;
+            high_water_mark = curr;
+            high_water_mark = high_water_mark + (index * min_sbrk_size);
+            brk(high_water_mark);   // BRK CALL #2 - ONLY TO SET HIGH BOUNDS!
+        }
     }
-    // Assign pointers
-    // Create sentinel
-    
-    //  While not NULL & sentinel is 0
-    //      !!NOTE: FIND OUT HOW TO TRACK FREE!!
-    //          CANNOT CHANGE MEM_BLOCK_T
-    //      IF Free AND Capacity >= size
-    //          Kick rocks, not here
-    //          update sentinel
-    //      ELSE IF FITS
-    //          update PTR
-    //          update capacity + size
-    //          Link DLL
-    //          update sentinel
-    //      ELSE
-    //          iterate
-    //  IF sentinel = 0 && New Mem
-    //      Determine min size necessary
-    //      Update ptr's
-    //      Update size/capacity
-    //      Update bounds
-
-
 
     return BLOCK_DATA(curr);
 }
@@ -197,24 +233,88 @@ vikalloc(size_t size)
 void 
 vikfree(void *ptr)
 {
-    if (isVerbose) {
-        fprintf(vikalloc_log_stream, ">> %d: %s entry\n"
-                , __LINE__, __FUNCTION__);
+    mem_block_t *curr = NULL;
+    mem_block_t *next = NULL;
+    mem_block_t *prev = NULL;
+    int sentinel;
+
+    sentinel = 0;
+    curr = block_list_head; // Assigning to iterate
+
+    while(curr != NULL && sentinel == 0)
+    {
+        if(BLOCK_DATA(curr) == ptr)
+        {
+            if(IS_FREE(curr))
+            {
+                // IF BLOCK IS FREE
+                if (isVerbose) {        // THE DIRECTION SHOWN TO US IN CLASS!!!
+                fprintf(vikalloc_log_stream, "Block is already free: ptr = "PTR"\n",(long) ( ptr-low_water_mark));
+                }
+                //      UPDATE SENTINEL
+                sentinel = 1;
+            }
+            else
+            {
+                // FREE BLOCK
+                //      NULL DATA
+                //      CHANGE SENTINEL
+                curr->size = 0;
+                sentinel = 1;
+            }
+
+        }
+        else
+        {
+            curr = curr->next;
+        }
+    }
+    //If empty
+    if(!curr) //Empty list or if Ptr was already free
+    {
+        return;
+    }
+    
+    // IF CURRENT IS NULL AND PREV IS NULL
+    if((curr->prev) && (IS_FREE(curr)) && (IS_FREE(curr->prev)))
+    {
+        prev = curr->prev;
+        prev->capacity = curr->capacity + prev->capacity + BLOCK_SIZE;
+        
+        if(curr->next)//adjust for top
+        {
+            curr->next->prev = curr->prev;
+        }
+        //then bottom
+        if(curr->prev)
+        {
+            curr->prev->next = curr->next;
+        }
+        //READJUST PTRS
+        curr->next = NULL;
+        curr->prev = NULL;
+        curr = prev;
     }
 
-    // Assign pointers
-    //      iterators next/prev
-    //      assign CURR to block head
-    // Create sentinel
-
-    //  IF CURR == false
-    //      return
-    //  Check for Coalesce
-    //      If prev = open && curr = open
-    //      If curr = open && next = open
-    //      update ptr's
-    //      coalesce
-
+    // IF CURR IS NULL AND NEXT IS NULL
+    if(curr->next && (IS_FREE(curr)) && (IS_FREE(curr->next)))
+    {
+        next = curr->next;
+        curr->capacity = curr->capacity + next->capacity + BLOCK_SIZE;
+        
+        if(next->next)
+        {
+            next->next->prev = next->prev;
+        }
+        if(next->prev) // ALLOW BOTTOM ABSORBTION
+        {
+            next->prev->next = next->next;
+        }
+        // REASSIGN PTRS
+        next->next = NULL;
+        next->prev = NULL;
+        next = curr;
+    }
 
     return;
 }
@@ -235,22 +335,23 @@ vikalloc_reset(void)
         }
     }
 
-    // RESET!
-    // Sets     upper address to lower bounds, 
-    //          sets block-list-head to NULL
-    //          resets lower and high water marks to NULL
-    brk(low_water_mark);
-    block_list_head = NULL;
+    //
+    //  Resets limits! At the list of seeming stupid, it wasn't requested to free memory, so I just reset all of the ptr's 
+    //
+    brk(low_water_mark);        // SETS BRK TO THE BEGINNING
+    block_list_head = NULL; 
+    block_list_tail = NULL;
     low_water_mark = NULL;
     high_water_mark = NULL;
 }
+
 
 void *
 vikcalloc(size_t nmemb, size_t size)
 {
     // Get ptr's    
     void *ptr = NULL;
-    size_t temp = nmemb * size;
+    size_t tempSize = nmemb * size;
     
     if (isVerbose) {
         fprintf(vikalloc_log_stream, ">> %d: %s entry\n"
@@ -260,12 +361,18 @@ vikcalloc(size_t nmemb, size_t size)
     // If nothing/trash is passed
     if(!nmemb || !size)
     {
-        return;
+        return NULL; //If nmemb or size is 0, then calloc() returns either NULL
     }
+    
+    /*
+        NOTE: By virture of the values being unsigned, it seems they're protected from possible integer overflows, 
+        as size_t can't go negative- so i've left that protection out from the manual entry.
+    */
+
     //  vikalloc 
-    ptr = vikalloc(temp);
+    ptr = vikalloc(tempSize);
     // memset returned ptr
-    memset(ptr, 0, temp); 
+    memset(ptr, 0, tempSize); 
 
     return ptr;
 }
@@ -273,39 +380,52 @@ vikcalloc(size_t nmemb, size_t size)
 void *
 vikrealloc(void *ptr, size_t size)
 {
+    int sentinel = 0;
+    void *tempPtr = NULL;
+    mem_block_t *curr = block_list_head;  //      Assign CURR to head
+    //      Next?
+    //          If next->size > curr->size && curr->size >= size
+
     if (isVerbose) {
         fprintf(vikalloc_log_stream, ">> %d: %s entry\n"
                 , __LINE__, __FUNCTION__);
     }
     
-    // Variable creation
-    //      sentinel = 0
-    //      ADD PTR
-    //      Assign CURR to head
-    //      Next?
-    //          If next->size > curr->size && curr->size >= size
-    //
     //  Test for empty/trash
-    //      If !size
-    //          Null
-    //      If !ptr
-    //          return vikalloc ptr
-    //
-    //      While !curr && sentinel
-    //          If CURR = ptr
-    //              If curr->size > size
-    //                  Update curr
-    //                  Update sentinel = 1?
-    //              Else
-    //                  ***ADD PTR***                  
-    //                  memcpy
-    //                  free
-    //                  update sentinel = 2?
-    //          Else
-    //              Increement
-    //      If sentinel = 1
-    //      if sentinel = 2
+    if(!ptr) 
+    {
+        return vikalloc(size); // On the off-chance this is requested a pointer can be returned.
+    }
+    while(curr != NULL && sentinel == 0)
+    {
+        if(BLOCK_DATA(curr) == ptr) //BLOCK_SIZE (sizeof(mem_block_t))
+        {
+            if(size <= curr->capacity)
+            {
+                curr->size = size;
+                sentinel = 1; // Loop break
+                // ESTABLISH CURR IN THIS POSITION? SENTINEL REWORK?
+            }
+            else
+            {
+                tempPtr = vikalloc(size);   // New block is allocated
+                memcpy(tempPtr, ptr, size); // contents are copied
+                vikfree(ptr);   // old block is deallocated
+                sentinel = 9;   // !!!!!!!!sentunel for ptr return!!!!!!!!
+            }
+        }
+        else
+        {
+            curr = curr->next; // else, increment
+        }
+    }
 
+    //      if sentinel was flagged IN LINE 496
+    if (sentinel == 9)
+    {
+        return tempPtr; // THIS WILL EXIT THE LOOP SINCE PTR WAS VIKFREE'D
+    }
+    
     return ptr;
 }
 
@@ -324,15 +444,17 @@ vikstrdup(const char *s)
     {
         return NULL;
     }
-    // Else if str is valid
+    // Else if s is valid
     else
     {
-        size_t strSize = strlen(s) + 1;
-        ptr = vikalloc(strSize);
-        memcpy(ptr, s, strSize);
+        size_t strSize = (strlen(s) + 1); // copy size + Null char
+        ptr = vikalloc(strSize);    // Allocate room for the size of the str
+        memcpy(ptr, s, strSize);    // Copy into memory
     }
 
-    return ptr;
+    return ptr; // Return copied str
 }
+
+
 
 #include "vikalloc_dump.c"
